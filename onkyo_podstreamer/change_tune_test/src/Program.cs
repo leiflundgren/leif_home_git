@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -16,16 +17,44 @@ namespace change_tune_test
         static int file_pos;
         static string dir = @"C:\Users\leif\Music";
 
+						
+        private static string FetchIP()
+      {
+	//Get all IP registered
+	// List<string> IPList = new List<string>();
+
+	foreach (IPAddress ip in Dns.GetHostEntry(Dns.GetHostName()).AddressList)
+	  {
+	    if (ip.AddressFamily == AddressFamily.InterNetwork)
+	      {
+		return ip.ToString();
+		//IPList.Add(ip.ToString());
+	      }
+	  }
+
+	return null;
+      }
+
         static void Main(string[] args)
         {
+	  if ( args.Length > 0 )
+	    dir = args[0];
+	  if ( !Directory.Exists(dir) )
+	    dir = @"C:\Users\leif\Music";
+	  if ( !Directory.Exists(dir) )
+	    dir = ".";
+
             files = new List<string>(Directory.EnumerateFiles(dir, "*.mp3"));
             file_pos = 0;
 
 
+            string port = @"http://" + FetchIP() + ":8091/";
             HttpListener server = new HttpListener();
-            server.Prefixes.Add("http://192.168.3.161:8091/");
+            server.Prefixes.Add(port);
             server.AuthenticationSchemes = AuthenticationSchemes.Anonymous;
             server.Start();
+	    Console.Out.WriteLine("Opened server on " + port);
+
             var ctx = server.GetContext();
 
             ctx.Response.ContentType = "application/mp3";
