@@ -18,15 +18,21 @@ namespace change_tune_test
 
         static void Main(string[] args)
         {
+            files = new List<string>(Directory.EnumerateFiles(dir, "*.mp3"));
+            file_pos = 0;
 
 
             HttpListener server = new HttpListener();
             server.Prefixes.Add("http://192.168.3.161:8091/");
+            server.AuthenticationSchemes = AuthenticationSchemes.Anonymous;
             server.Start();
             var ctx = server.GetContext();
-            files = new List<string>(Directory.EnumerateFiles(dir, "*.mp3"));
-            file_pos = 0;
+
+            ctx.Response.ContentType = "application/mp3";
+            outstream = ctx.Response.OutputStream;
+
             
+
             PushData();
 
             while ( file_pos < files.Count)
