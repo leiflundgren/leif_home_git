@@ -47,6 +47,7 @@ namespace change_tune_test
             files = new List<string>(Directory.EnumerateFiles(dir, "*.mp3"));
             file_pos = 0;
 
+	    Console.Out.WriteLine("Files is " + dir + ":\r\n" + String.Join(", ", files.ToArray()));
 
             string port = @"http://" + FetchIP() + ":8091/";
             HttpListener server = new HttpListener();
@@ -57,6 +58,8 @@ namespace change_tune_test
 
             var ctx = server.GetContext();
 
+	    Console.Out.WriteLine("Got request from " + ctx.Request.RemoteEndPoint.ToString() + "\r\nUser-agent: " + ctx.Request.UserAgent);
+
             ctx.Response.ContentType = "application/mp3";
             outstream = ctx.Response.OutputStream;
 
@@ -66,11 +69,14 @@ namespace change_tune_test
 
             while ( file_pos < files.Count)
             {
-                Console.Out.WriteLine("Playing " + files[file_pos] + " " + file_pos + " of  " + files.Count + ". Enter to skip ahead");
-                Console.In.Read();
+	      if ( Console.In.Peek() == '\n' ) {
+		Console.In.Read();
                 ++file_pos;
                 mp3stream = null;
+	      }
+	      System.Threading.Thread.Sleep(100);
             }
+	    Console.Out.WriteLine("Done!");
             System.Threading.Thread.Sleep(5000);
         }
 
@@ -81,10 +87,21 @@ namespace change_tune_test
                 if (file_pos >= files.Count)
                     return;
                 mp3stream = new FileStream(Path.Combine(dir, files[file_pos]), FileMode.Open, FileAccess.Read);
+                Console.Out.WriteLine("Playing " + files[file_pos] + " " + file_pos + " of  " + files.Count + ". Enter to skip ahead");
             }
 
             var buf = new byte[1024];
             int len = mp3stream.Read(buf, 0, buf.Length);
+
+	    if ( len <= 0 )
+	      {
+		Console.WriteLine("Reached end of file. " + files[file_pos]);
+		file_pos++;
+		mp3stream.Close();
+		mp3stream = null;
+		PushData();
+		return;
+	      }
 
             Console.WriteLine("Sending " + len + " bytes");
             outstream.BeginWrite(buf, 0, len, data_sent, null);
