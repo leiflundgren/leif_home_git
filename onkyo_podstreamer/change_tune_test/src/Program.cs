@@ -16,7 +16,7 @@ namespace change_tune_test
         static List<string> files;
         static int file_pos;
         static string dir = @"C:\Users\leif\Music";
-
+        static int send_Counte = 0;
 
         private static string FetchIP()
         {
@@ -64,21 +64,28 @@ namespace change_tune_test
             Console.Out.WriteLine("Opened server on " + port);
 
             var ctx = server.GetContext();
-
+            
             Console.Out.WriteLine("Got request from " + ctx.Request.RemoteEndPoint.ToString() + "\r\nUser-agent: " + ctx.Request.UserAgent);
 
-            ctx.Response.ContentType = "application/mp3";
+            ctx.Response.ProtocolVersion = ctx.Request.ProtocolVersion;
+            ctx.Response.Headers.Add("icy-br", "128");
+            ctx.Response.Headers.Add("ice-audio-info", "bitrate=128");            ctx.Response.Headers.Add("icy-description", "(null)");            ctx.Response.Headers.Add("icy-genre", "Classical");            ctx.Response.Headers.Add("icy-name", "De Gehoorde Stilte");            ctx.Response.Headers.Add("icy-pub", "1");            ctx.Response.Headers.Add("icy-url", "http://www.concertzender.nl/");            ctx.Response.Headers.Add("Server", "Icecast 2.3.3");
+            ctx.Response.Headers.Add("Cache-Control", "no-cache");
+
+            ctx.Response.ContentType = "audio/mpeg";
             outstream = ctx.Response.OutputStream;
-
-
+            
 
             PushData();
 
             while (file_pos < files.Count)
             {
-                if (Console.In.Peek() == '\n')
+                int c = Console.In.Peek();
+                if ( c > 0 )
                 {
-                    Console.In.Read();
+                    while ( (c=Console.In.Peek()) > 0 )
+                        Console.In.Read();
+                    Console.Out.WriteLine("Change file requested");
                     ++file_pos;
                     mp3stream = null;
                 }
@@ -111,8 +118,19 @@ namespace change_tune_test
                 return;
             }
 
-            Console.WriteLine("Sending " + len + " bytes");
-            outstream.BeginWrite(buf, 0, len, data_sent, null);
+            Console.WriteLine("Sending " + len + " bytes. Chunk " + (++send_Counte));
+            try
+            {
+                outstream.BeginWrite(buf, 0, len, data_sent, null);
+            }
+            catch ( Exception ex )
+            {
+                Console.Out.WriteLine("Caught " + ex + "\r\nGuessing remote disconnect. Terminating.");
+                file_pos = files.Count;
+                mp3stream.Close();
+                mp3stream = null;
+                return;
+            }
         }
 
         private static void data_sent(IAsyncResult ar)
