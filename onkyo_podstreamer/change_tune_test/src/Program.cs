@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace change_tune_test
@@ -17,8 +18,9 @@ namespace change_tune_test
         static int file_pos;
         static string dir = @"C:\Users\leif\Music";
         static int send_Counte = 0;
+        static int pushed_buffers = 0;
 
-        private static string FetchIP()
+        private static IPAddress FetchIP()
         {
             //Get all IP registered
             // List<string> IPList = new List<string>();
@@ -27,12 +29,25 @@ namespace change_tune_test
             {
                 if (ip.AddressFamily == AddressFamily.InterNetwork)
                 {
-                    return ip.ToString();
-                    //IPList.Add(ip.ToString());
+                    return ip;
                 }
             }
 
             return null;
+        }
+
+        static void ConsoleReader()
+        {
+            System.Threading.Thread.CurrentThread.IsBackground = true;
+            while (true)
+            {
+                if (Console.In.Read() == 13)
+                {
+                    Console.Out.WriteLine("Change file requested");
+                    ++file_pos;
+                    mp3stream = null;
+                }
+            }
         }
 
         static void Main(string[] args)
@@ -55,41 +70,49 @@ namespace change_tune_test
 
             Console.Out.WriteLine("Files is " + dir + ":\r\n" + String.Join(", ", files.ToArray()));
 
-
-            string port = @"http://" + FetchIP() + ":8091/";
-            HttpListener server = new HttpListener();
-            server.Prefixes.Add(port);
-            server.AuthenticationSchemes = AuthenticationSchemes.Anonymous;
+            IPAddress addr = FetchIP();
+            TcpListener server = new TcpListener(addr, 8091);
             server.Start();
-            Console.Out.WriteLine("Opened server on " + port);
-
-            var ctx = server.GetContext();
+            Console.Out.WriteLine("Opened server on "  + addr.ToString() + ":" + 8091);
+            var ctx = server.AcceptTcpClient();
             
-            Console.Out.WriteLine("Got request from " + ctx.Request.RemoteEndPoint.ToString() + "\r\nUser-agent: " + ctx.Request.UserAgent);
+            Console.Out.WriteLine("Got request from " + ctx.Client.RemoteEndPoint.ToString() );
 
-            ctx.Response.ProtocolVersion = ctx.Request.ProtocolVersion;
-            ctx.Response.Headers.Add("icy-br", "128");
-            ctx.Response.Headers.Add("ice-audio-info", "bitrate=128");            ctx.Response.Headers.Add("icy-description", "(null)");            ctx.Response.Headers.Add("icy-genre", "Classical");            ctx.Response.Headers.Add("icy-name", "De Gehoorde Stilte");            ctx.Response.Headers.Add("icy-pub", "1");            ctx.Response.Headers.Add("icy-url", "http://www.concertzender.nl/");            ctx.Response.Headers.Add("Server", "Icecast 2.3.3");
-            ctx.Response.Headers.Add("Cache-Control", "no-cache");
+            outstream = ctx.GetStream();
 
-            ctx.Response.ContentType = "audio/mpeg";
-            outstream = ctx.Response.OutputStream;
-            
+            var reader = new Thread(new ThreadStart(ConsoleReader));
+            reader.IsBackground = true;
+            reader.Start();
 
-            PushData();
+            byte[] request_bytes = new byte[1024];
+            int len = ctx.GetStream().Read(request_bytes, 0, request_bytes.Length);
+            String request = System.Text.Encoding.UTF8.GetString(request_bytes, 0, len);
+            Console.Out.WriteLine("Got request\r\n" + request);
+
+            string headers =
+@"HTTP/1.0 200 OK
+Content-Type: audio/mpeg
+icy-br: 128
+ice-audio-info: bitrate=128
+icy-description: (null)
+icy-genre: Classical
+icy-name: Onkyo Testing
+icy-pub: 1
+icy-url: http://www.concertzender.nl/
+Server: Icecast 2.3.3
+Cache-Control: no-cache" + "\r\n\r\n";
+            byte[] header_bytes = System.Text.Encoding.UTF8.GetBytes(headers);
+
+            outstream.Write(header_bytes, 0, header_bytes.Length);
 
             while (file_pos < files.Count)
             {
-                int c = Console.In.Peek();
-                if ( c > 0 )
+                while ( pushed_buffers < 5 )
                 {
-                    while ( (c=Console.In.Peek()) > 0 )
-                        Console.In.Read();
-                    Console.Out.WriteLine("Change file requested");
-                    ++file_pos;
-                    mp3stream = null;
+                    PushData();
                 }
-                System.Threading.Thread.Sleep(100);
+
+                System.Threading.Thread.Sleep(50);
             }
             Console.Out.WriteLine("Done!");
             System.Threading.Thread.Sleep(5000);
@@ -122,6 +145,7 @@ namespace change_tune_test
             try
             {
                 outstream.BeginWrite(buf, 0, len, data_sent, null);
+                System.Threading.Interlocked.Increment(ref pushed_buffers);
             }
             catch ( Exception ex )
             {
@@ -135,7 +159,9 @@ namespace change_tune_test
 
         private static void data_sent(IAsyncResult ar)
         {
-            PushData();
+            System.Threading.Interlocked.Decrement(ref pushed_buffers);
+            
+            // PushData();
         }
 
     }
